@@ -589,6 +589,7 @@ function bindEvents() {
   });
 
   $("#usersBtn").addEventListener("click", openUsers);
+  $("#trashBtn").addEventListener("click", openTrash);
 
   document.querySelectorAll("[data-close]").forEach((btn) => {
     btn.addEventListener("click", () => btn.closest("dialog").close());
@@ -630,6 +631,92 @@ async function openUsers() {
       list.appendChild(row);
     });
     $("#usersDialog").showModal();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function openTrash() {
+  try {
+    const payload = await api("/api/trash");
+    renderTrash(payload);
+    if (!$("#trashDialog").open) $("#trashDialog").showModal();
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+function renderTrash(payload) {
+  const projects = $("#trashProjects");
+  const batches = $("#trashBatches");
+  projects.innerHTML = "";
+  batches.innerHTML = "";
+
+  if (payload.projects.length === 0) {
+    projects.appendChild(trashEmpty("没有已删除项目"));
+  } else {
+    payload.projects.forEach((project) => {
+      const item = document.createElement("div");
+      item.className = "trash-item";
+      item.innerHTML = `
+        <div>
+          <strong>${escapeHtml(project.name)}</strong>
+          <span>删除时间：${shortTime(project.deleted_at)}</span>
+        </div>
+      `;
+      const btn = miniButton("恢复项目");
+      btn.addEventListener("click", () => restoreProject(project.id));
+      item.appendChild(btn);
+      projects.appendChild(item);
+    });
+  }
+
+  if (payload.batches.length === 0) {
+    batches.appendChild(trashEmpty("没有已删除批次"));
+  } else {
+    payload.batches.forEach((batch) => {
+      const item = document.createElement("div");
+      item.className = "trash-item";
+      const projectState = batch.project_deleted_at ? "所属项目也在回收站" : "所属项目可用";
+      item.innerHTML = `
+        <div>
+          <strong>${escapeHtml(batch.name)} · ${escapeHtml(batch.batch_no)}</strong>
+          <span>${escapeHtml(batch.project_name)} · ${projectState} · 删除时间：${shortTime(batch.deleted_at)}</span>
+        </div>
+      `;
+      const btn = miniButton(batch.project_deleted_at ? "先恢复项目" : "恢复批次");
+      btn.disabled = Boolean(batch.project_deleted_at);
+      btn.addEventListener("click", () => restoreBatch(batch.id));
+      item.appendChild(btn);
+      batches.appendChild(item);
+    });
+  }
+}
+
+function trashEmpty(text) {
+  const item = document.createElement("div");
+  item.className = "empty";
+  item.textContent = text;
+  return item;
+}
+
+async function restoreProject(projectId) {
+  try {
+    await api(`/api/projects/${projectId}/restore`, { method: "POST" });
+    await loadData();
+    await openTrash();
+    showToast("项目已恢复");
+  } catch (err) {
+    showToast(err.message);
+  }
+}
+
+async function restoreBatch(batchId) {
+  try {
+    await api(`/api/batches/${batchId}/restore`, { method: "POST" });
+    await loadData();
+    await openTrash();
+    showToast("批次已恢复");
   } catch (err) {
     showToast(err.message);
   }

@@ -94,6 +94,11 @@ h3 {
   font-size: 18px;
 }
 
+h4 {
+  margin: 8px 0 0;
+  font-size: 14px;
+}
+
 .muted,
 .hint {
   color: var(--muted);
@@ -625,13 +630,15 @@ dialog::backdrop {
 }
 
 .history-list,
-.users-list {
+.users-list,
+.trash-list {
   display: grid;
   gap: 10px;
 }
 
 .history-item,
-.user-row {
+.user-row,
+.trash-item {
   display: grid;
   grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
@@ -644,12 +651,16 @@ dialog::backdrop {
 .history-item strong,
 .history-item span,
 .user-row strong,
-.user-row span {
+.user-row span,
+.trash-item strong,
+.trash-item span {
   display: block;
 }
 
 .history-item span,
-.user-row span {
+.user-row span,
+.trash-item span,
+.trash-note {
   color: var(--muted);
   font-size: 12px;
 }
@@ -677,6 +688,10 @@ dialog::backdrop {
 }
 
 @media (max-width: 900px) {
+  .app {
+    grid-template-rows: auto 1fr;
+  }
+
   .login-panel,
   .workspace {
     grid-template-columns: 1fr;

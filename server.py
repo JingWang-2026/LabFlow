@@ -126,8 +126,8 @@ def init_db():
             CREATE TABLE IF NOT EXISTS batches (
                 id INTEGER PRIMARY KEY AUTOINCREMENT,
                 project_id INTEGER NOT NULL,
-                batch_no TEXT NOT NULL UNIQUE,
-                name TEXT,
+                batch_no TEXT NOT NULL,
+                name TEXT NOT NULL UNIQUE,
                 synthesis_submitted_date TEXT,
                 synthesis_completed_date TEXT,
                 bio_test_start_date TEXT,
@@ -155,9 +155,71 @@ def init_db():
             );
             """
         )
+        migrate_schema(conn)
         count = conn.execute("SELECT COUNT(*) AS c FROM users").fetchone()["c"]
         if count == 0:
             seed_users(conn)
+
+
+def migrate_schema(conn):
+    row = conn.execute("SELECT sql FROM sqlite_master WHERE type = 'table' AND name = 'batches'").fetchone()
+    if not row or not row["sql"]:
+        return
+    sql = row["sql"]
+    if "batch_no TEXT NOT NULL UNIQUE" not in sql and "name TEXT NOT NULL UNIQUE" in sql:
+        return
+    normalize_batch_names(conn)
+    conn.execute("PRAGMA foreign_keys = OFF")
+    conn.executescript(
+        """
+        CREATE TABLE batches_new (
+            id INTEGER PRIMARY KEY AUTOINCREMENT,
+            project_id INTEGER NOT NULL,
+            batch_no TEXT NOT NULL,
+            name TEXT NOT NULL UNIQUE,
+            synthesis_submitted_date TEXT,
+            synthesis_completed_date TEXT,
+            bio_test_start_date TEXT,
+            bio_test_completed_date TEXT,
+            created_by INTEGER NOT NULL,
+            created_at TEXT NOT NULL,
+            updated_at TEXT NOT NULL,
+            deleted_at TEXT,
+            FOREIGN KEY(project_id) REFERENCES projects(id),
+            FOREIGN KEY(created_by) REFERENCES users(id)
+        );
+
+        INSERT INTO batches_new
+        (id, project_id, batch_no, name, synthesis_submitted_date, synthesis_completed_date,
+         bio_test_start_date, bio_test_completed_date, created_by, created_at, updated_at, deleted_at)
+        SELECT id, project_id, batch_no, name, synthesis_submitted_date, synthesis_completed_date,
+               bio_test_start_date, bio_test_completed_date, created_by, created_at, updated_at, deleted_at
+        FROM batches;
+
+        DROP TABLE batches;
+        ALTER TABLE batches_new RENAME TO batches;
+        """
+    )
+    conn.execute("PRAGMA foreign_keys = ON")
+
+
+def normalize_batch_names(conn):
+    rows = conn.execute("SELECT id, batch_no, name FROM batches ORDER BY id").fetchall()
+    used = set()
+    for row in rows:
+        base = (row["name"] or "").strip()
+        if not base:
+            base = (row["batch_no"] or "").strip() or f"Batch-{row['id']}"
+        if len(base) > 110:
+            base = base[:110].strip()
+        candidate = base
+        if candidate in used:
+            candidate = f"{base}-{row['id']}"
+        while candidate in used:
+            candidate = f"{base}-{secrets.token_hex(2)}"
+        used.add(candidate)
+        if candidate != row["name"]:
+            conn.execute("UPDATE batches SET name = ? WHERE id = ?", (candidate, row["id"]))
 
 
 def seed_users(conn):
@@ -298,6 +360,27 @@ def serialize_batch(conn, row):
     }
 
 
+def serialize_deleted_project(row):
+    return {
+        "id": row["id"],
+        "name": row["name"],
+        "created_at": row["created_at"],
+        "deleted_at": row["deleted_at"],
+    }
+
+
+def serialize_deleted_batch(row):
+    return {
+        "id": row["id"],
+        "project_id": row["project_id"],
+        "project_name": row["project_name"],
+        "project_deleted_at": row["project_deleted_at"],
+        "batch_no": row["batch_no"],
+        "name": row["name"] or "",
+        "deleted_at": row["deleted_at"],
+    }
+
+
 class RequestError(Exception):
     def __init__(self, status, message):
         super().__init__(message)
@@ -335,8 +418,8 @@ class LabFlowHandler(BaseHTTPRequestHandler):
             self.send_json({"error": exc.message}, exc.status)
         except sqlite3.IntegrityError as exc:
             message = "数据已存在或违反唯一性要求"
-            if "batches.batch_no" in str(exc):
-                message = "批次编号已存在，批次编号必须全系统唯一"
+            if "batches.name" in str(exc):
+                message = "批次名称已存在，批次名称必须全系统唯一（包括回收站）"
             if "projects.name" in str(exc):
                 message = "项目名称已存在"
             self.send_json({"error": message}, 409)
@@ -358,6 +441,8 @@ class LabFlowHandler(BaseHTTPRequestHandler):
             return self.change_password(user)
         if method == "POST" and path == "/api/reset-password":
             return self.reset_password(user)
+        if method == "GET" and path == "/api/trash":
+            return self.list_trash(user)
         if path == "/api/projects":
             if method == "GET":
                 return self.list_projects()
@@ -370,6 +455,9 @@ class LabFlowHandler(BaseHTTPRequestHandler):
                 return self.update_project(user, project_id)
             if method == "DELETE":
                 return self.delete_project(user, project_id)
+        project_restore_match = re.fullmatch(r"/api/projects/(\d+)/restore", path)
+        if project_restore_match and method == "POST":
+            return self.restore_project(user, int(project_restore_match.group(1)))
         if path == "/api/batches":
             if method == "GET":
                 return self.list_batches(query)
@@ -382,6 +470,9 @@ class LabFlowHandler(BaseHTTPRequestHandler):
                 return self.update_batch(user, batch_id)
             if method == "DELETE":
                 return self.delete_batch(user, batch_id)
+        batch_restore_match = re.fullmatch(r"/api/batches/(\d+)/restore", path)
+        if batch_restore_match and method == "POST":
+            return self.restore_batch(user, int(batch_restore_match.group(1)))
         file_upload_match = re.fullmatch(r"/api/batches/(\d+)/files", path)
         if file_upload_match and method == "POST":
             return self.upload_file(user, int(file_upload_match.group(1)))
@@ -543,6 +634,32 @@ class LabFlowHandler(BaseHTTPRequestHandler):
             ).fetchall()
         self.send_json({"projects": [serialize_project(row) for row in rows]})
 
+    def list_trash(self, user):
+        self.require_manager(user)
+        with db() as conn:
+            project_rows = conn.execute(
+                """
+                SELECT id, name, created_at, deleted_at
+                FROM projects
+                WHERE deleted_at IS NOT NULL
+                ORDER BY deleted_at DESC, id DESC
+                """
+            ).fetchall()
+            batch_rows = conn.execute(
+                """
+                SELECT b.id, b.project_id, p.name AS project_name, p.deleted_at AS project_deleted_at,
+                       b.batch_no, b.name, b.deleted_at
+                FROM batches b
+                JOIN projects p ON p.id = b.project_id
+                WHERE b.deleted_at IS NOT NULL
+                ORDER BY b.deleted_at DESC, b.id DESC
+                """
+            ).fetchall()
+        self.send_json({
+            "projects": [serialize_deleted_project(row) for row in project_rows],
+            "batches": [serialize_deleted_batch(row) for row in batch_rows],
+        })
+
     def create_project(self, user):
         self.require_manager(user)
         payload = self.read_json()
@@ -575,17 +692,30 @@ class LabFlowHandler(BaseHTTPRequestHandler):
     def delete_project(self, user, project_id):
         self.require_manager(user)
         with db() as conn:
+            deleted_at = now_iso()
             cur = conn.execute(
                 "UPDATE projects SET deleted_at = ? WHERE id = ? AND deleted_at IS NULL",
-                (now_iso(), project_id),
+                (deleted_at, project_id),
             )
             if cur.rowcount == 0:
                 raise RequestError(404, "项目不存在")
             conn.execute(
                 "UPDATE batches SET deleted_at = ? WHERE project_id = ? AND deleted_at IS NULL",
-                (now_iso(), project_id),
+                (deleted_at, project_id),
             )
         self.send_json({"ok": True})
+
+    def restore_project(self, user, project_id):
+        self.require_manager(user)
+        with db() as conn:
+            cur = conn.execute(
+                "UPDATE projects SET deleted_at = NULL WHERE id = ? AND deleted_at IS NOT NULL",
+                (project_id,),
+            )
+            if cur.rowcount == 0:
+                raise RequestError(404, "回收站中没有这个项目")
+            row = conn.execute("SELECT * FROM projects WHERE id = ?", (project_id,)).fetchone()
+        self.send_json({"project": serialize_project(row)})
 
     def list_batches(self, query):
         project_id = (query.get("project_id") or [None])[0]
@@ -615,6 +745,8 @@ class LabFlowHandler(BaseHTTPRequestHandler):
             raise RequestError(400, "请选择项目")
         if not batch_no:
             raise RequestError(400, "批次编号不能为空")
+        if not name:
+            raise RequestError(400, "批次名称不能为空，且必须全系统唯一")
         with db() as conn:
             project = conn.execute("SELECT id FROM projects WHERE id = ? AND deleted_at IS NULL", (project_id,)).fetchone()
             if not project:
@@ -649,6 +781,8 @@ class LabFlowHandler(BaseHTTPRequestHandler):
                     allowed[field] = clean_text(payload[field], 120)
         if "batch_no" in allowed and not allowed["batch_no"]:
             raise RequestError(400, "批次编号不能为空")
+        if "name" in allowed and not allowed["name"]:
+            raise RequestError(400, "批次名称不能为空，且必须全系统唯一")
         if not allowed:
             raise RequestError(400, "没有可更新的字段")
         allowed["updated_at"] = now_iso()
@@ -682,6 +816,30 @@ class LabFlowHandler(BaseHTTPRequestHandler):
             if cur.rowcount == 0:
                 raise RequestError(404, "批次不存在")
         self.send_json({"ok": True})
+
+    def restore_batch(self, user, batch_id):
+        self.require_manager(user)
+        with db() as conn:
+            row = conn.execute(
+                """
+                SELECT b.*, p.name AS project_name, p.deleted_at AS project_deleted_at
+                FROM batches b
+                JOIN projects p ON p.id = b.project_id
+                WHERE b.id = ?
+                """,
+                (batch_id,),
+            ).fetchone()
+            if not row or not row["deleted_at"]:
+                raise RequestError(404, "回收站中没有这个批次")
+            if row["project_deleted_at"]:
+                raise RequestError(409, "请先恢复该批次所属项目")
+            conn.execute(
+                "UPDATE batches SET deleted_at = NULL, updated_at = ? WHERE id = ?",
+                (now_iso(), batch_id),
+            )
+            restored = get_batch(conn, batch_id)
+            batch = serialize_batch(conn, restored)
+        self.send_json({"batch": batch})
 
     def upload_file(self, user, batch_id):
         parts = self.parse_multipart()
@@ -763,6 +921,7 @@ class LabFlowHandler(BaseHTTPRequestHandler):
         self.send_response(200)
         self.send_header("Content-Type", f"{mime}; charset=utf-8" if mime.startswith("text/") else mime)
         self.send_header("Content-Length", str(file_path.stat().st_size))
+        self.send_header("Cache-Control", "no-store")
         self.end_headers()
         with file_path.open("rb") as fh:
             shutil.copyfileobj(fh, self.wfile)
