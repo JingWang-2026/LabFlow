@@ -590,8 +590,23 @@ td .wide-input {
 }
 
 .scale-track {
-  display: flex;
-  justify-content: space-between;
+  position: relative;
+  min-height: 18px;
+}
+
+.month-marker {
+  position: absolute;
+  top: 0;
+  transform: translateX(-50%);
+  white-space: nowrap;
+}
+
+.month-marker:first-child {
+  transform: translateX(0);
+}
+
+.month-marker:last-child {
+  transform: translateX(-100%);
 }
 
 dialog {

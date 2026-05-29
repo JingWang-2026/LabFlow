@@ -376,7 +376,10 @@ function renderGantt() {
   grid.className = "gantt-grid";
   const scale = document.createElement("div");
   scale.className = "gantt-scale";
-  scale.innerHTML = `<span></span><div class="scale-track"><span>${dateText(min)}</span><span>${dateText(max)}</span></div>`;
+  const markers = monthMarkers(min, max, totalDays);
+  scale.innerHTML = `<span></span><div class="scale-track">${markers.map((marker) => (
+    `<span class="month-marker" style="left:${marker.left}%">${marker.label}</span>`
+  )).join("")}</div>`;
   grid.appendChild(scale);
 
   state.batches.forEach((batch) => {
@@ -431,6 +434,30 @@ function daysBetween(a, b) {
 
 function dateText(date) {
   return `${date.getFullYear()}-${String(date.getMonth() + 1).padStart(2, "0")}-${String(date.getDate()).padStart(2, "0")}`;
+}
+
+function monthMarkers(min, max, totalDays) {
+  const markers = [{ left: 0, label: monthLabel(min) }];
+  let cursor = new Date(min.getFullYear(), min.getMonth() + 1, 1);
+  while (cursor < max) {
+    markers.push({
+      left: percent(daysBetween(min, cursor), totalDays),
+      label: monthLabel(cursor),
+    });
+    cursor = new Date(cursor.getFullYear(), cursor.getMonth() + 1, 1);
+  }
+  const lastLabel = markers[markers.length - 1].label;
+  const maxLabel = monthLabel(max);
+  if (maxLabel !== lastLabel) {
+    markers.push({ left: 100, label: maxLabel });
+  }
+  return markers;
+}
+
+function monthLabel(date) {
+  const month = `${date.getMonth() + 1}月`;
+  if (date.getMonth() === 0) return `${date.getFullYear()}年${month}`;
+  return month;
 }
 
 function replaceBatch(batch) {
