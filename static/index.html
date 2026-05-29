@@ -1,0 +1,192 @@
+<!doctype html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>LabFlow</title>
+  <link rel="stylesheet" href="/styles.css">
+</head>
+<body>
+  <main id="loginView" class="login-shell hidden">
+    <section class="login-panel">
+      <div>
+        <p class="eyebrow">实验室协同工具</p>
+        <h1>LabFlow</h1>
+        <p class="muted">化学合成与生物测试批次进度管理</p>
+      </div>
+      <form id="loginForm" class="stack">
+        <label>
+          <span>账号</span>
+          <input name="username" autocomplete="username" required placeholder="leader">
+        </label>
+        <label>
+          <span>密码</span>
+          <input name="password" type="password" autocomplete="current-password" required placeholder="请输入密码">
+        </label>
+        <button class="primary" type="submit">登录</button>
+        <p class="hint">首次默认账号见 README，登录后可修改密码。</p>
+      </form>
+    </section>
+  </main>
+
+  <main id="appView" class="app hidden">
+    <header class="topbar">
+      <div class="brand">
+        <div class="mark">LF</div>
+        <div>
+          <strong>LabFlow</strong>
+          <span>实验批次协同</span>
+        </div>
+      </div>
+      <div class="top-actions">
+        <button id="refreshBtn" class="icon-btn" title="刷新数据" type="button">↻</button>
+        <button id="passwordBtn" class="ghost" type="button">修改密码</button>
+        <button id="usersBtn" class="ghost manager-only hidden" type="button">账号</button>
+        <div id="userBadge" class="user-badge"></div>
+        <button id="logoutBtn" class="secondary" type="button">退出</button>
+      </div>
+    </header>
+
+    <section class="workspace">
+      <aside class="sidebar">
+        <div class="side-head">
+          <span>项目</span>
+          <button id="newProjectBtn" class="icon-btn manager-only hidden" title="新建项目" type="button">＋</button>
+        </div>
+        <button id="allProjectsBtn" class="project-item active" type="button">全部项目</button>
+        <div id="projectList" class="project-list"></div>
+      </aside>
+
+      <section class="content">
+        <div class="content-head">
+          <div>
+            <h2 id="pageTitle">全部项目</h2>
+            <p id="pageSubtitle" class="muted">查看全部批次状态与文件版本</p>
+          </div>
+          <div class="head-actions">
+            <div class="tabs" role="tablist">
+              <button id="tableTab" class="tab active" type="button">表格</button>
+              <button id="ganttTab" class="tab" type="button">甘特图</button>
+            </div>
+            <button id="deleteProjectBtn" class="secondary manager-only hidden" type="button">删除项目</button>
+            <button id="newBatchBtn" class="primary manager-only hidden" type="button">新建批次</button>
+          </div>
+        </div>
+
+        <div class="summary-grid">
+          <article><span>批次数</span><strong id="statTotal">0</strong></article>
+          <article><span>合成中</span><strong id="statSynthesis">0</strong></article>
+          <article><span>测试中</span><strong id="statBio">0</strong></article>
+          <article><span>已完成</span><strong id="statDone">0</strong></article>
+        </div>
+
+        <section id="tableView" class="view-panel">
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>项目</th>
+                  <th>批次编号</th>
+                  <th>批次名称</th>
+                  <th>状态</th>
+                  <th>合成提交</th>
+                  <th>合成完成</th>
+                  <th>测试开始</th>
+                  <th>测试完成</th>
+                  <th>化合物文件</th>
+                  <th>生物原始数据</th>
+                  <th>数据整理文档</th>
+                  <th class="manager-only hidden">操作</th>
+                </tr>
+              </thead>
+              <tbody id="batchTable"></tbody>
+            </table>
+          </div>
+          <div id="emptyState" class="empty hidden">还没有批次。总负责人可以先创建项目和批次。</div>
+        </section>
+
+        <section id="ganttView" class="view-panel hidden">
+          <div id="ganttBody" class="gantt"></div>
+        </section>
+      </section>
+    </section>
+  </main>
+
+  <dialog id="projectDialog">
+    <form id="projectForm" method="dialog" class="modal">
+      <h3>新建项目</h3>
+      <label>
+        <span>项目名称</span>
+        <input name="name" required maxlength="80">
+      </label>
+      <div class="modal-actions">
+        <button class="secondary" value="cancel" type="button" data-close>取消</button>
+        <button class="primary" value="default" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="batchDialog">
+    <form id="batchForm" method="dialog" class="modal">
+      <h3>新建批次</h3>
+      <label>
+        <span>所属项目</span>
+        <select name="project_id" required></select>
+      </label>
+      <label>
+        <span>批次编号</span>
+        <input name="batch_no" required maxlength="80">
+      </label>
+      <label>
+        <span>批次名称</span>
+        <input name="name" maxlength="120">
+      </label>
+      <div class="modal-actions">
+        <button class="secondary" value="cancel" type="button" data-close>取消</button>
+        <button class="primary" value="default" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="historyDialog">
+    <div class="modal wide">
+      <div class="modal-head">
+        <h3 id="historyTitle">文件历史版本</h3>
+        <button class="icon-btn" type="button" data-close>×</button>
+      </div>
+      <div id="historyList" class="history-list"></div>
+    </div>
+  </dialog>
+
+  <dialog id="passwordDialog">
+    <form id="passwordForm" method="dialog" class="modal">
+      <h3>修改密码</h3>
+      <label>
+        <span>旧密码</span>
+        <input name="old_password" type="password" autocomplete="current-password" required>
+      </label>
+      <label>
+        <span>新密码</span>
+        <input name="new_password" type="password" autocomplete="new-password" minlength="6" required>
+      </label>
+      <div class="modal-actions">
+        <button class="secondary" value="cancel" type="button" data-close>取消</button>
+        <button class="primary" value="default" type="submit">保存</button>
+      </div>
+    </form>
+  </dialog>
+
+  <dialog id="usersDialog">
+    <div class="modal wide">
+      <div class="modal-head">
+        <h3>账号管理</h3>
+        <button class="icon-btn" type="button" data-close>×</button>
+      </div>
+      <div id="usersList" class="users-list"></div>
+    </div>
+  </dialog>
+
+  <div id="toast" class="toast hidden"></div>
+  <script src="/app.js"></script>
+</body>
+</html>
