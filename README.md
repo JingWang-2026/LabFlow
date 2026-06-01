@@ -10,6 +10,24 @@ LabFlow 是一个局域网实验室批次协同工具，用于管理化学合成
 启动LabFlow.bat
 ```
 
+## 开机自启动
+
+当前电脑已配置 Windows 登录后自动后台启动 LabFlow。自启动文件位于：
+
+```text
+C:\Users\31588\AppData\Roaming\Microsoft\Windows\Start Menu\Programs\Startup\LabFlow_AutoStart.vbs
+```
+
+它会调用：
+
+```text
+start_labflow_background.py
+```
+
+该脚本会先检查 `127.0.0.1:8080` 是否已经有服务在运行，避免重复启动。
+
+如需取消自启动，删除启动文件夹里的 `LabFlow_AutoStart.vbs` 即可。
+
 启动后，服务器电脑本机可访问：
 
 ```text
