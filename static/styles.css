@@ -426,6 +426,10 @@ td .wide-input {
   width: 180px;
 }
 
+td .batch-no-input {
+  width: 72px;
+}
+
 .status {
   display: inline-flex;
   align-items: center;

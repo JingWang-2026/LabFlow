@@ -183,7 +183,7 @@ function renderTable() {
     const tr = document.createElement("tr");
     tr.append(
       textCell(batch.project_name),
-      inputCell(batch, "batch_no", "text", state.user.role === "manager", "wide-input"),
+      inputCell(batch, "batch_no", "text", state.user.role === "manager", "batch-no-input"),
       inputCell(batch, "name", "text", state.user.role === "manager", "wide-input"),
       statusCell(batch),
       inputCell(batch, "synthesis_submitted_date", "date", canEdit("synthesis_submitted_date")),
