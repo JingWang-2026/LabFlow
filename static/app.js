@@ -105,7 +105,8 @@ async function boot() {
 }
 
 function renderUser() {
-  $("#userBadge").innerHTML = `<strong>${state.user.display_name}</strong><span>${state.user.username} · ${state.user.role_label}</span>`;
+  const displayName = state.user.username === "leader" ? "Leader" : state.user.display_name;
+  $("#userBadge").innerHTML = `<strong>${displayName}</strong>`;
   document.querySelectorAll(".manager-only").forEach((el) => {
     el.classList.toggle("hidden", state.user.role !== "manager");
   });
